@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <iterator>
+#include <float.h>
 
 #include "particle_filter.h"
 
@@ -82,14 +83,14 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 
 	for (int i = 0; i < observations.size(); i++) {
 
-		double distance = DBL_MAX;
+		double minDist = DBL_MAX;
 		int landmark_idx = -1;
 
 		for (int j = 0; j < predicted.size(); j++) {
-			d = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
+			double d = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
 
-			if (d < distance) {
-				distance = d;
+			if (d < minDist) {
+				minDist = d;
 				landmark_idx = j;
 			}
 
