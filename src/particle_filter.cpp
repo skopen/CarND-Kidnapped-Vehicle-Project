@@ -64,15 +64,16 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	normal_distribution<double> dist_y(0, std_pos[1]);
 	normal_distribution<double> dist_theta(0, std_pos[2]);
 
-	for (int i = 0; i < num_particles; i++) {
-			Particle p = particles[i];
+	for (int i = 0; i < num_particles; i++)
+	{
+		Particle p = particles[i];
 
-			p.x += (velocity/yaw_rate)*(sin(p.theta + yaw_rate*delta_t) - sin(p.theta)) + dist_x(gen);
-			p.y += (velocity/yaw_rate)*(cos(p.theta) - cos(p.theta + yaw_rate*delta_t)) + dist_y(gen);
-			p.theta += yaw_rate*delta_t + dist_theta(gen);
+		p.x += (velocity/yaw_rate)*(sin(p.theta + yaw_rate*delta_t) - sin(p.theta)) + dist_x(gen);
+		p.y += (velocity/yaw_rate)*(cos(p.theta) - cos(p.theta + yaw_rate*delta_t)) + dist_y(gen);
+		p.theta += yaw_rate*delta_t + dist_theta(gen);
 
-			// std::cout << p.id << ": " << p.x << ", " << p.y << ", " << p.theta << endl;
-		}
+		// std::cout << p.id << ": " << p.x << ", " << p.y << ", " << p.theta << endl;
+	}
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
@@ -81,21 +82,24 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
 
-	for (int i = 0; i < observations.size(); i++) {
+	for (int i = 0; i < observations.size(); i++)
+	{
 
 		double minDist = DBL_MAX;
 		int landmark_idx = -1;
 
-		for (int j = 0; j < predicted.size(); j++) {
+		for (int j = 0; j < predicted.size(); j++)
+		{
 			double d = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
 
-			if (d < minDist) {
+			if (d < minDist)
+			{
 				minDist = d;
 				landmark_idx = j;
 			}
-
-
 		}
+
+		observations[i].id = predicted[landmark_idx].id;
 	}
 }
 
@@ -111,6 +115,59 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+
+	std::cout << "sensor_range: " << sensor_range << endl;
+
+	// Associate landmarks to observations
+	vector<LandmarkObs> landmarks;
+	for (int i = 0; i < map_landmarks.landmark_list.size(); i++)
+	{
+		LandmarkObs landmark;
+		landmark.id = map_landmarks.landmark_list[i].id_i;
+		landmark.x = map_landmarks.landmark_list[i].x_f;
+		landmark.y = map_landmarks.landmark_list[i].y_f;
+
+		landmarks.push_back(landmark);
+	}
+	dataAssociation(landmarks, observations);
+
+	double sx = std_landmark[0];
+	double sy = std_landmark[1];
+
+	for (int i = 0; i < num_particles; i++)
+	{
+		Particle p = particles[i];
+
+		double prob = 1.0;
+
+		for (int j = 0; j < observations.size(); j++)
+		{
+			LandmarkObs obs = observations[j];
+
+			double mux, muy = 0.0;
+
+			// identify the landmark associated with this observation to get mux and muy
+			for (int k = 0; k < map_landmarks.landmark_list.size(); k++)
+			{
+				if (map_landmarks.landmark_list[k].id_i == obs.id)
+				{
+					mux = map_landmarks.landmark_list[k].x_f;
+					muy = map_landmarks.landmark_list[k].y_f;
+				}
+			}
+
+			double xm = p.x + cos(p.theta)*obs.x - sin(p.theta)*obs.y;
+			double ym = p.y + sin(p.theta)*obs.x + cos(p.theta)*obs.y;
+
+			double pxy = (1.0/(2*M_PI*sx*sy))*exp(-((((xm - mux)*(xm - mux))/(2*sx*sx)) + (((ym - muy)*(ym - muy))/(2*sy*sy))));
+
+			prob *= pxy;
+		}
+
+		p.weight = prob;
+
+		// std::cout << p.id << ": " << p.x << ", " << p.y << ", " << p.theta << endl;
+	}
 }
 
 void ParticleFilter::resample() {
