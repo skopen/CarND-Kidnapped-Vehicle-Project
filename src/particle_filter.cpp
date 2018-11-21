@@ -31,14 +31,16 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
+	// start with a set of particles
 	num_particles = 200;
 
-	// This line creates a normal (Gaussian) distribution for x, y, theta
+	// Create Gaussian distribution for x, y, theta
 	default_random_engine gen;
 	normal_distribution<double> dist_x(x, std[0]);
 	normal_distribution<double> dist_y(y, std[1]);
 	normal_distribution<double> dist_theta(theta, std[2]);
 
+	// Create necessary particles, and assign them ids, positions and heading (randomly per Gaussian distribution)
 	for (int i = 0; i < num_particles; i++)
 	{
 		Particle part;
@@ -54,6 +56,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 		weights.push_back(1.0);
 	}
 
+	// set initialized to true
 	is_initialized = true;
 }
 
@@ -64,25 +67,29 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/0
 
-		normal_distribution<double> dist_x(0, std_pos[0]);
-		normal_distribution<double> dist_y(0, std_pos[1]);
-		normal_distribution<double> dist_theta(0, std_pos[2]);
 
-		for (int i = 0; i < num_particles; i++)
+	// set up Gaussians
+	normal_distribution<double> dist_x(0, std_pos[0]);
+	normal_distribution<double> dist_y(0, std_pos[1]);
+	normal_distribution<double> dist_theta(0, std_pos[2]);
+
+	// predict new location and heading based on velocity, yaw rate and elapsed time
+	for (int i = 0; i < num_particles; i++)
+	{
+		// accommodate for divide by zero by downcasting to a simpler yaw free model
+		if (fabs(yaw_rate) < 0.000001)
 		{
-			if (fabs(yaw_rate) < 0.000001)
-			{
-				particles[i].x += velocity*delta_t*cos(particles[i].theta) + dist_x(gen);
-				particles[i].y += velocity*delta_t*sin(particles[i].theta) + dist_y(gen);
-				particles[i].theta += dist_theta(gen);
-			}
-			else
-			{
-				particles[i].x += (velocity/yaw_rate)*(sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta)) + dist_x(gen);
-				particles[i].y += (velocity/yaw_rate)*(cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t)) + dist_y(gen);
-				particles[i].theta += yaw_rate*delta_t + dist_theta(gen);
-			}
+			particles[i].x += velocity*delta_t*cos(particles[i].theta) + dist_x(gen);
+			particles[i].y += velocity*delta_t*sin(particles[i].theta) + dist_y(gen);
+			particles[i].theta += dist_theta(gen);
 		}
+		else
+		{
+			particles[i].x += (velocity/yaw_rate)*(sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta)) + dist_x(gen);
+			particles[i].y += (velocity/yaw_rate)*(cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t)) + dist_y(gen);
+			particles[i].theta += yaw_rate*delta_t + dist_theta(gen);
+		}
+	}
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
@@ -91,9 +98,9 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
 
+	// do the O(m*n) processing needed to associate observations with landmarks based on proximity
 	for (unsigned int i = 0; i < observations.size(); i++)
 	{
-
 		double minDist = DBL_MAX;
 		int landmark_idx = -1;
 
@@ -125,15 +132,18 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
 
+	// get standard deviations for landmarks
 	double sx = std_landmark[0];
 	double sy = std_landmark[1];
 
+	// run through all particles
 	for (int i = 0; i < num_particles; i++)
 	{
 		Particle p = particles[i];
 
 		double prob = 1.0;
 
+		// run through all observations
 		for (unsigned int j = 0; j < observations.size(); j++)
 		{
 			LandmarkObs obs = observations[j];
@@ -144,7 +154,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			double minDist = DBL_MAX;
 			int landmark_idx = -1;
 
-			// identify the landmark associated with this observation to get mux and muy
+			// identify the landmark associated with this observation to get mux and muy (not using the dataAssociation()
+			// method, but that is also an option
 			for (unsigned int k = 0; k < map_landmarks.landmark_list.size(); k++)
 			{
 				double distance = dist(xm, ym, map_landmarks.landmark_list[k].x_f, map_landmarks.landmark_list[k].y_f);
@@ -158,11 +169,14 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			double mux = map_landmarks.landmark_list[landmark_idx].x_f;
 			double muy = map_landmarks.landmark_list[landmark_idx].y_f;
 
+			// find the probability (weight) that this obersation is possible for the particle in consideration
 			double pxy = (1.0/(2*M_PI*sx*sy))*exp(-((((xm - mux)*(xm - mux))/(2*sx*sx)) + (((ym - muy)*(ym - muy))/(2*sy*sy))));
 
+			// calculate effective probability for fully independent events/observations
 			prob *= pxy;
 		}
 
+		// update weights as a proxy for likelihood/probability
 		particles[i].weight = prob;
 		weights[i] = prob;
 	}
@@ -173,17 +187,18 @@ void ParticleFilter::resample() {
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
 
-	vector<Particle> new_particles;
-
-    default_random_engine gen;
+	// use standard discrete distribution model
     std::discrete_distribution<> d(weights.begin(), weights.end());
+
     std::vector<Particle> newParticles;
+
+    // resample based on weights
     for(unsigned int i = 0; i < particles.size(); i++)
     {
-        int idx = d(gen);
-        newParticles.push_back(particles[idx]);
-        //std::cout << idx << ":" << particles[idx].weight << " ";
+        newParticles.push_back(particles[d(gen)]);
     }
+
+    // swap out old particles for newly sampled ones
     particles = newParticles;
 }
 
